@@ -1,4 +1,4 @@
-date,wsj_mean_compound,cnbc_mean_compound,fortune_mean_compound,reuters_mean_compound,Adj Close
+date,wsj_mean_compound,cnbc_mean_compound,fortune_mean_compound,reuters_mean_compound,close
 2017/12/7,0.296,-0.1366,0,0,2636.97998
 2017/12/8,0,0,-0.2423,0,2651.5
 2017/12/11,0,0,0,0,2659.98999
