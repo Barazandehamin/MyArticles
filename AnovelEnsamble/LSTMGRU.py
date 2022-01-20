@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# coding: utf-8
+
 import json
 import time
 import math
@@ -12,81 +15,305 @@ from keras.callbacks import EarlyStopping, ModelCheckpoint
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import Ridge
-from sklearn.model_selection import train_test_split
+
+from math import pi,sqrt,exp,pow,log
+from numpy.linalg import det, inv
+from abc import ABCMeta, abstractmethod
+from sklearn import cluster
+
+import statsmodels.api as sm 
+import scipy.stats as scs
+import scipy.optimize as sco
+import scipy.interpolate as sci
+from scipy import stats
 from tensorflow.keras import layers
 
 
 
-data= pd.read_csv("source_price.csv")
-length_data=len(data)
-#print(data.describe())
-data['reuters_mean_compound'].plot()
-data['wsj_mean_compound'].plot()
-data['cnbc_mean_compound'].plot()
-data['fortune_mean_compound'].plot()
-
-y=data.close
-x=data.drop('close',axis=1)
-x=x.drop('date',axis=1)
-
-x_train,x_test,y_train,y_test=train_test_split(x,y,test_size=0.2)
-x_train = np.asarray(x_train).astype(np.float32)
-y_train = np.asarray(y_train).astype(np.float32)
-
-x_train = np.reshape(x_train, (x_train.shape[0], 1, x_train.shape[1]))
-
-y_train = y_train.astype("float32")
-y_test = y_test.astype("float32")
-
-
-# variables
-n=50 #of neurons
-inp_steps=1 #input time esteps
-input_dim =4
+split = (0.85);
+sequence_length=10;
+normalise= True
+batch_size=100;
+input_dim=5
+input_timesteps=9
+neurons=50
+epochs=5
+prediction_len=1
+dense_output=1
 drop_out=0.2
-epochs = 10
-batch_size=4
 
-#LSTM Model
+dataframe = pd.read_csv("source_price.csv")
+cols = ['Adj Close','wsj_mean_compound','cnbc_mean_compound','fortune_mean_compound',
+          'reuters_mean_compound']
+
+len_dataframe=dataframe.shape[0]
+
+i_split = int(len(dataframe) * split)
+data_train = dataframe.iloc[0:85,1:6]
+data_valid = dataframe.iloc[86:100,1:6]
+data_test = dataframe.iloc[101:121,1:6]
+len_train  = len(data_train)
+len_valid   = len(data_valid)
+len_test   = len(data_test)
+len_train_windows = None
+print('data_train.shape',data_train.shape)
+print('data_test.shape',data_valid.shape)
+print('data_test.shape',data_test.shape)
+
+data_train[0:5]
+
+
+
+data_test[0:5]
+
+#get_test_data   
+data_windows = []
+for i in range(len_test - sequence_length):
+    data_windows.append(data_test[i:i+sequence_length])
+data_windows = np.array(data_windows).astype(float)
+ # get original y_test
+y_test_ori = data_windows[:, -1, [0]]
+print('y_test_ori.shape',y_test_ori.shape)
+
+window_data=data_windows
+win_num=window_data.shape[0]
+col_num=window_data.shape[2]
+normalised_data = []
+record_min=[]
+record_max=[]
+
+#normalize
+for win_i in range(0,win_num):
+    normalised_window = []
+    for col_i in range(0,1):#col_num):
+      temp_col=window_data[win_i,:,col_i]
+      temp_min=min(temp_col)
+      if col_i==0:
+        record_min.append(temp_min)#record min
+      temp_col=temp_col-temp_min
+      temp_max=max(temp_col)
+      if col_i==0:
+        record_max.append(temp_max)#record max
+      temp_col=temp_col/temp_max
+      normalised_window.append(temp_col)
+    for col_i in range(1,col_num):
+      temp_col=window_data[win_i,:,col_i]
+      normalised_window.append(temp_col)
+    normalised_window = np.array(normalised_window).T
+    normalised_data.append(normalised_window)
+normalised_data=np.array(normalised_data)
+
+# normalised_data=window_data
+data_windows=normalised_data#get_test_data
+x_test = data_windows[:, :-1]
+y_test = data_windows[:, -1, [0]]
+print('x_test.shape',x_test.shape)
+print('y_test.shape',y_test.shape)
+
+
+#get_train_data 
+data_windows = []
+for i in range(len_train - sequence_length):
+    data_windows.append(data_train[i:i+sequence_length])
+data_windows = np.array(data_windows).astype(float)
+  
+window_data=data_windows
+win_num=window_data.shape[0]
+col_num=window_data.shape[2]
+
+normalised_data = []
+
+for win_i in range(0,win_num):
+    normalised_window = []
+    for col_i in range(0,1):#col_num):
+      temp_col=window_data[win_i,:,col_i]
+      temp_min=min(temp_col)
+      if col_i==0:
+        record_min.append(temp_min)#record min
+      temp_col=temp_col-temp_min
+      temp_max=max(temp_col)
+      if col_i==0:
+        record_max.append(temp_max)#record max
+      temp_col=temp_col/temp_max
+      normalised_window.append(temp_col)
+    for col_i in range(1,col_num):
+      temp_col=window_data[win_i,:,col_i]
+      normalised_window.append(temp_col)
+    normalised_window = np.array(normalised_window).T
+    normalised_data.append(normalised_window)
+normalised_data=np.array(normalised_data)
+
+# normalised_data=window_data
+data_windows=normalised_data
+x_train = data_windows[:, :-1]
+y_train = data_windows[:, -1,[0]]
+print('x_train.shape',x_train.shape)
+print('y_train.shape',y_train.shape)
+
+
+
+# LSTM MODEL
 model = Sequential()
-model.add(LSTM(n, input_shape=(inp_steps, input_dim), return_sequences = True))
+model.add(LSTM(neurons, input_shape=(input_timesteps, input_dim), return_sequences = True))
 model.add(Dropout(drop_out))
-model.add(LSTM(n,return_sequences = True))
+model.add(LSTM(neurons,return_sequences = True))
 model.add(Dropout(drop_out))
-model.add(LSTM(n,return_sequences = True))
+model.add(LSTM(neurons,return_sequences =True))
 model.add(Dropout(drop_out))
-model.add(LSTM(n,return_sequences = True))
+model.add(LSTM(neurons,return_sequences =True))
 model.add(Dropout(drop_out))
+model.add(Dense(dense_output, activation='linear'))
 # Compile model
 model.compile(loss='mean_squared_error',
-                optimizer='adam')
+                optimizer='rmsprop')
 # Fit the model
 model.fit(x_train,y_train,epochs=epochs,batch_size=batch_size)
-#model.summary()
-#model.predict(x_test)
+
+
+model.predict(x_test)
+
+
+#multi sequence predict
+data=x_test
+prediction_seqs = []
+window_size=sequence_length
+pre_win_num=int(len(data)/prediction_len)
+
+for i in range(0,pre_win_num):
+    curr_frame = data[i*prediction_len]
+    predicted = []
+    for j in range(0,prediction_len):
+      temp=model.predict(curr_frame[newaxis,:,:])[0]
+      predicted.append(temp)
+      curr_frame = curr_frame[1:]
+      curr_frame = np.insert(curr_frame, [window_size-2], predicted[-1], axis=0)
+    prediction_seqs.append(predicted)
+    
+
+#de_predicted
+de_predicted=[]
+len_pre_win=int(len(data)/prediction_len)
+len_pre=prediction_len
+
+m=0
+for i in range(0,len_pre_win):
+    for j in range(0,len_pre):
+      de_predicted.append(prediction_seqs[i][j][0]*record_max[m]+record_min[m])
+      m=m+1
+#print(de_predicted)
+
+
+
+error = []
+diff=y_test.shape[0]-prediction_len*pre_win_num
+
+for i in range(y_test_ori.shape[0]-diff):
+    error.append(y_test_ori[i,] - de_predicted[i])
+    
+squaredError = []
+absError = []
+for val in error:
+    squaredError.append(val * val) 
+    absError.append(abs(val))
+
+error_percent=[]
+for i in range(len(error)):
+    val=absError[i]/y_test_ori[i,]
+    val=abs(val)
+    error_percent.append(val)
+
+mean_error_percent=sum(error_percent) / len(error_percent)
+accuracy=1-mean_error_percent
+
+MSE=sum(squaredError) / len(squaredError)
+
+lstmRes=prediction_seqs
+print("MSE",MSE)
+print('accuracy',accuracy)
+print('mean_error_percent',mean_error_percent)
 
 
 #GRU Model
 modelg=Sequential()
-modelg.add(layers.GRU(n, input_shape=(inp_steps, input_dim), return_sequences = True))
+modelg.add(layers.GRU(neurons, input_shape=(input_timesteps, input_dim), return_sequences = True))
 modelg.add(Dropout(drop_out))
 
-modelg.add(layers.GRU(50, return_sequences=True))
+modelg.add(layers.GRU(neurons, return_sequences=True))
 modelg.add(Dropout(drop_out))
 
-modelg.add(layers.GRU(50, return_sequences=True))
+modelg.add(layers.GRU(neurons, return_sequences=True))
 modelg.add(Dropout(drop_out))
 
-modelg.add(layers.GRU(50, return_sequences=True))
+modelg.add(layers.GRU(neurons, return_sequences=True))
 modelg.add(Dropout(drop_out))
 
-modelg.compile(loss='mean_squared_error',optimizer='adam')
+modelg.add(Dense(dense_output, activation='linear'))
+
+modelg.compile(loss='mean_squared_error',optimizer='rmsprop')
 modelg.fit(x_train,y_train,epochs=epochs,batch_size=batch_size)
 
+modelg.predict(x_test)
+
+
+
+#multi sequence predict
+data=x_test
+prediction_seqs = []
+window_size=sequence_length
+pre_win_num=int(len(data)/prediction_len)
+
+for i in range(0,pre_win_num):
+    curr_frame = data[i*prediction_len]
+    predicted = []
+    for j in range(0,prediction_len):
+      temp=modelg.predict(curr_frame[newaxis,:,:])[0]
+      predicted.append(temp)
+      curr_frame = curr_frame[1:]
+      curr_frame = np.insert(curr_frame, [window_size-2], predicted[-1], axis=0)
+    prediction_seqs.append(predicted)
+    
+
+#de_predicted
+de_predicted=[]
+len_pre_win=int(len(data)/prediction_len)
+len_pre=prediction_len
+
+m=0
+for i in range(0,len_pre_win):
+    for j in range(0,len_pre):
+      de_predicted.append(prediction_seqs[i][j][0]*record_max[m]+record_min[m])
+      m=m+1
+#print(de_predicted)
+
+
+
+error = []
+diff=y_test.shape[0]-prediction_len*pre_win_num
+
+for i in range(y_test_ori.shape[0]-diff):
+    error.append(y_test_ori[i,] - de_predicted[i])
+    
+squaredError = []
+absError = []
+for val in error:
+    squaredError.append(val * val) 
+    absError.append(abs(val))
+
+error_percent=[]
+for i in range(len(error)):
+    val=absError[i]/y_test_ori[i,]
+    val=abs(val)
+    error_percent.append(val)
+
+mean_error_percent=sum(error_percent) / len(error_percent)
+accuracy=1-mean_error_percent
+
+MSE=sum(squaredError) / len(squaredError)
+
+gruRes=prediction_seqs
+print("MSE",MSE)
+print('accuracy',accuracy)
+print('mean_error_percent',mean_error_percent)
+
+model.summary()
 modelg.summary()
-
-#Meta Learner
-
-modelm = Sequential()
-modelm.add(Dense(12, input_dim=8, activation='relu'))
-
